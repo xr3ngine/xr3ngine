@@ -25,7 +25,7 @@ import { SCENE_ASSET_TYPES, WorldScene } from '../functions/SceneLoading'
 import { SceneObjectSystem } from '../systems/SceneObjectSystem'
 import { addObject3DComponent } from './addObject3DComponent'
 
-export const setEnvMap: Behavior = (entity, args: EnvMapProps) => {
+export const setEnvMap = (entity, args: EnvMapProps) => {
   if (!isClient) {
     return
   }

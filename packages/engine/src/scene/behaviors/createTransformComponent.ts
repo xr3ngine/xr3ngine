@@ -10,7 +10,7 @@ interface XYZInterface {
   z: number
 }
 
-export const createTransformComponent: Behavior = (
+export const createTransformComponent = (
   entity: Entity,
   args: { position: XYZInterface; rotation: XYZInterface; scale: XYZInterface }
 ): void => {

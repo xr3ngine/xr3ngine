@@ -6,7 +6,7 @@ import { Interactable } from '../../interaction/components/Interactable'
 import { InteractiveSystem } from '../../interaction/systems/InteractiveSystem'
 import { addObject3DComponent } from './addObject3DComponent'
 
-export const createLink: Behavior = (entity, args: { href: string }) => {
+export const createLink = (entity, args: { href: string }) => {
   addObject3DComponent(entity, { obj3d: new Object3D(), objArgs: args })
   const interactiveData = {
     onInteraction: () => {

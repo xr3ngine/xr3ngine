@@ -3,7 +3,7 @@
  * @packageDocumentation
  * */
 
-import { Color, Object3D } from 'three'
+import { Audio, BufferGeometry, Color, Mesh, MeshStandardMaterial, Object3D } from 'three'
 import { Object3DComponent } from '../components/Object3DComponent'
 import {
   AmbientLightProbeTagComponent,
@@ -55,14 +55,27 @@ import ShadowComponent from '../components/ShadowComponent'
 import { createShadow } from './createShadow'
 import { WebGLRendererSystem } from '../../renderer/WebGLRendererSystem'
 import { isClient } from '../../common/functions/isClient'
+import { VideoProps } from './createMedia'
+import { SceneBackgroundProps, SkyBoxShaderProps, SkyTypeEnum } from '../../editor/nodes/SkyboxNode'
 
+interface ObjArgs extends VideoProps {
+  key?: string
+  receiveShadow?: boolean
+  castShadow?: boolean
+  'material.color'?: string
+  href?: string
+  skyBoxShaderProps?: SkyBoxShaderProps
+}
+
+type Object3DProps = {
+  obj3d?: Object3D | HTMLAudioElement
+  objArgs?: ObjArgs
+  parentEntity?: Entity
+}
 /**
  * Add Object3D Component with args into Entity from the Behavior.
  */
-export const addObject3DComponent: Behavior<{ obj3d: any; objArgs?: any; parentEntity?: Entity }> = (
-  entity: Entity,
-  args
-) => {
+export const addObject3DComponent = (entity: Entity, args: Object3DProps) => {
   const isObject3d = typeof args.obj3d === 'object'
   let object3d
 
@@ -99,7 +112,7 @@ export const addObject3DComponent: Behavior<{ obj3d: any; objArgs?: any; parentE
   }
 
   if (isObject3d) object3d = args.obj3d
-  else object3d = new args.obj3d()
+  // else object3d = new args.obj3d();
 
   typeof args.objArgs === 'object' &&
     Object.keys(args.objArgs).forEach((key) => {

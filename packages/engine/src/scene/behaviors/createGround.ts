@@ -1,6 +1,7 @@
 import { CircleBufferGeometry, Color, Mesh, MeshStandardMaterial, Quaternion, Vector3 } from 'three'
 import { BodyType } from 'three-physx'
 import { Behavior } from '../../common/interfaces/Behavior'
+import { Entity } from '../../ecs/classes/Entity'
 import { addComponent, getComponent, getMutableComponent } from '../../ecs/functions/EntityFunctions'
 import { addColliderWithoutEntity } from '../../physics/behaviors/colliderCreateFunctions'
 import { ColliderComponent } from '../../physics/components/ColliderComponent'
@@ -8,7 +9,11 @@ import { CollisionGroups } from '../../physics/enums/CollisionGroups'
 import { TransformComponent } from '../../transform/components/TransformComponent'
 import { addObject3DComponent } from './addObject3DComponent'
 
-export const createGround: Behavior = (entity, args) => {
+type GroundProps = {
+  color: string
+}
+
+export const createGround = (entity: Entity, args: GroundProps) => {
   const mesh = new Mesh(
     new CircleBufferGeometry(1000, 32).rotateX(-Math.PI / 2),
     new MeshStandardMaterial({

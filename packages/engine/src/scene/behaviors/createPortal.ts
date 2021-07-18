@@ -5,6 +5,7 @@ import { mergeBufferGeometries } from '../../common/classes/BufferGeometryUtils'
 import { isClient } from '../../common/functions/isClient'
 import { Behavior } from '../../common/interfaces/Behavior'
 import { Engine } from '../../ecs/classes/Engine'
+import { Entity } from '../../ecs/classes/Entity'
 import { addComponent, getComponent } from '../../ecs/functions/EntityFunctions'
 import { ColliderComponent } from '../../physics/components/ColliderComponent'
 import { CollisionGroups } from '../../physics/enums/CollisionGroups'
@@ -23,7 +24,7 @@ export type PortalProps = {
 
 const vec3 = new Vector3()
 
-export const createPortal: Behavior = (entity, args) => {
+export const createPortal = (entity: Entity, args: PortalProps) => {
   const { location, displayText, spawnPosition } = args
 
   const spawnRotation = new Quaternion().setFromEuler(

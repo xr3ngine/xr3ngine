@@ -5,10 +5,7 @@ import { addComponent } from '../../ecs/functions/EntityFunctions'
 import { FogComponent } from '../components/FogComponent'
 import { FogType } from '../constants/FogType'
 
-export const setFog: Behavior = (
-  entity,
-  args: { type: string; color: string; density: number; near: number; far: number }
-) => {
+export const setFog = (entity, args: { type: string; color: string; density: number; near: number; far: number }) => {
   if (args.type === FogType.Disabled) {
     return
   }

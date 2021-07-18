@@ -14,6 +14,7 @@ import { InteractiveSystem } from '../../interaction/systems/InteractiveSystem'
 import Video from '../classes/Video'
 import { Network } from '../../networking/classes/Network'
 import { PrefabType } from '../../networking/templates/PrefabType'
+import { Time } from '../../networking/types/SnapshotDataTypes'
 
 const isBrowser = new Function('try {return this===window;}catch(e){ return false;}')
 
@@ -27,35 +28,40 @@ if (isBrowser()) {
 }
 
 export interface AudioProps {
-  src: string
-  controls: boolean
-  autoPlay: boolean
-  loop: boolean
-  synchronize: number
-  audioType: 'stereo' | 'pannernode'
-  volume: number
-  distanceModel: 'linear' | 'inverse' | 'exponential'
-  rolloffFactor: number
-  refDistance: number
-  maxDistance: number
-  coneInnerAngle: number
-  coneOuterAngle: number
-  coneOuterGain: number
-  interactable: boolean
+  src?: string
+  controls?: boolean
+  autoPlay?: boolean
+  loop?: boolean
+  synchronize?: number
+  audioType?: 'stereo' | 'pannernode'
+  volume?: number
+  distanceModel?: 'linear' | 'inverse' | 'exponential'
+  rolloffFactor?: number
+  refDistance?: number
+  maxDistance?: number
+  coneInnerAngle?: number
+  coneOuterAngle?: number
+  coneOuterGain?: number
+  interactable?: boolean
 }
 
 export interface VideoProps extends AudioProps {
-  isLivestream: boolean
-  elementId: string
-  projection: 'flat' | '360-equirectangular'
+  isLivestream?: boolean
+  elementId?: string
+  projection?: 'flat' | '360-equirectangular'
 }
 
-export const elementPlaying = (element: any): boolean => {
+export const elementPlaying = (element: {
+  currentTime: Time
+  paused: boolean
+  ended: boolean
+  readyState: number
+}): boolean => {
   // if (isWebWorker) return element?._isPlaying;
   return element && !!(element.currentTime > 0 && !element.paused && !element.ended && element.readyState > 2)
 }
 
-const onMediaInteraction: Behavior = (entityInitiator, args, delta, entityInteractive, time) => {
+const onMediaInteraction = (entityInitiator, args, delta, entityInteractive, time) => {
   const volumetric = getComponent(entityInteractive, VolumetricComponent)
   if (volumetric) {
     // TODO handle volumetric interaction here
@@ -71,7 +77,7 @@ const onMediaInteraction: Behavior = (entityInitiator, args, delta, entityIntera
   }
 }
 
-const onMediaInteractionHover: Behavior = (
+const onMediaInteractionHover = (
   entityInitiator,
   { focused }: { focused: boolean },
   delta,
@@ -88,9 +94,10 @@ const onMediaInteractionHover: Behavior = (
   })
 }
 
-export function createMediaServer(entity, args: any): void {
+export function createMediaServer(entity, args: { interactable: boolean }): void {
   addObject3DComponent(entity, { obj3d: new Object3D(), objArgs: args })
   if (args.interactable) addInteraction(entity)
+
   // If media component is not requires to be sync then return
 
   // const data = {
@@ -131,10 +138,11 @@ export function createVideo(entity, args: VideoProps): void {
   if (args.interactable) addInteraction(entity)
 }
 
-export const createVolumetric: Behavior = (entity, args: VolumetricProps) => {
+export const createVolumetric = (entity, args: VolumetricProps) => {
   addComponent(entity, VolumetricComponent)
   const volumetricComponent = getMutableComponent(entity, VolumetricComponent)
   const container = new Object3D()
+
   // const worker = new PlayerWorker();
   const DracosisSequence = new DracosisPlayer({
     scene: container,
