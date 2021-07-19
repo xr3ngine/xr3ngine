@@ -47,7 +47,7 @@ import { setEnvMap } from '../behaviors/setEnvMap'
 import { PersistTagComponent } from '../components/PersistTagComponent'
 import { createPortal } from '../behaviors/createPortal'
 import { createGround } from '../behaviors/createGround'
-import { handleRendererSettings } from '../behaviors/handleRendererSettings'
+import { configureCSM, handleRendererSettings } from '../behaviors/handleRendererSettings'
 import { WebGLRendererSystem } from '../../renderer/WebGLRendererSystem'
 import { Object3DComponent } from '../components/Object3DComponent'
 import { AnimationComponent } from '../../character/components/AnimationComponent'
@@ -60,6 +60,11 @@ import { AnimationManager } from '../../character/AnimationManager'
 export enum SCENE_ASSET_TYPES {
   ENVMAP
 }
+
+type ScenePropertyType = {
+  directionalLights: DirectionalLight[]
+  isCSMEnabled: boolean
+}
 export class WorldScene {
   loadedModels = 0
   loaders: Promise<void>[] = []
@@ -71,8 +76,15 @@ export class WorldScene {
   loadScene = (scene: SceneData) => {
     WorldScene.callbacks = {}
     WorldScene.isLoading = true
+
     // reset renderer settings for if we are teleporting and the new scene does not have an override
-    handleRendererSettings()
+    handleRendererSettings(null, true)
+    configureCSM(null, true)
+
+    const sceneProperty: ScenePropertyType = {
+      directionalLights: []
+    } as ScenePropertyType
+
     Object.keys(scene.entities).forEach((key) => {
       const sceneEntity = scene.entities[key]
       const entity = createEntity()
@@ -80,7 +92,7 @@ export class WorldScene {
 
       sceneEntity.components.forEach((component) => {
         component.data.sceneEntityId = sceneEntity.entityId
-        this.loadComponent(entity, component)
+        this.loadComponent(entity, component, sceneProperty)
       })
     })
 
@@ -88,6 +100,7 @@ export class WorldScene {
       .then(() => {
         WorldScene.isLoading = false
         Engine.sceneLoaded = true
+        configureCSM(sceneProperty.directionalLights)
         EngineEvents.instance.dispatchEvent({ type: EngineEvents.EVENTS.SCENE_LOADED })
 
         this.onCompleted()
@@ -113,7 +126,7 @@ export class WorldScene {
     })
   }
 
-  loadComponent = (entity: Entity, component: SceneDataComponent): void => {
+  loadComponent = (entity: Entity, component: SceneDataComponent, sceneProperty: ScenePropertyType): void => {
     // remove '-1', '-2' etc suffixes
     const name = component.name.replace(/(-\d+)|(\s)/g, '')
 
@@ -150,6 +163,8 @@ export class WorldScene {
           }
         })
         addComponent(entity, LightTagComponent)
+
+        sceneProperty.directionalLights.push(getComponent(entity, Object3DComponent).value as DirectionalLight)
         break
 
       case 'hemisphere-light':
@@ -340,6 +355,7 @@ export class WorldScene {
 
       case 'renderer-settings':
         handleRendererSettings(component.data)
+        sceneProperty.isCSMEnabled = component.data.csm
         break
 
       case 'spawn-point':
