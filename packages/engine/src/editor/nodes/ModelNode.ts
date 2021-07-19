@@ -404,7 +404,7 @@ export default class ModelNode extends EditorNodeMixin(Model) {
       }
     })
   }
-  serialize() {
+  async serialize(projectID) {
     const components = {
       'gltf-model': {
         src: this._canonicalUrl,
@@ -451,7 +451,7 @@ export default class ModelNode extends EditorNodeMixin(Model) {
     if (this.walkable) {
       components['walkable'] = {}
     }
-    return super.serialize(components)
+    return await super.serialize(projectID, components)
   }
   copy(source, recursive = true) {
     super.copy(source, recursive)

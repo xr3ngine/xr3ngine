@@ -26,6 +26,7 @@ export default (options: any) => {
     // After creating of project, remove the owned_file of project json
 
     // Find the project owned_file from database
+
     const ownedFile = await StaticResourceModel.findOne({
       where: {
         id: context.data.ownedFileId
@@ -33,9 +34,11 @@ export default (options: any) => {
       raw: true
     })
 
+    console.log('Generating teh Colleciton0')
     if (!ownedFile) {
       return await Promise.reject(new BadRequest('Project File not found!'))
     }
+    console.log('Generating teh Colleciton')
     let sceneData
     if (config.server.storageProvider === 'aws') {
       sceneData = await fetch(ownedFile.url).then((res) => res.json())
@@ -43,15 +46,21 @@ export default (options: any) => {
       sceneData = await readJSONFromBlobStore(storage, ownedFile.key)
     }
     if (!sceneData) return
+    console.log('Generating teh Colleciton22+' + JSON.stringify(context.data.ownedUploadedFileId))
+    const id = context.data.ownedUploadedFileId['thumbnailOwnedFileId']
+    const iiiddd = JSON.stringify(context.data.ownedUploadedFileId)
     const savedCollection = await CollectionModel.create({
-      thumbnailOwnedFileId: context.data.thumbnailOwnedFileId,
+      //thumbnailOwnedFileId: iiiddd,
+      thumbnailOwnedFileId: iiiddd,
+      //ownedUploadedFileId: JSON.stringify(context.data.ownedUploadedFileId),
       type: options.type ?? collectionType.scene,
       name: context.data.name,
       metadata: sceneData.metadata,
       version: sceneData.version,
       userId: loggedInUser.userId
     })
-
+    console.log('Generating teh Colleciton33')
+    console.log('Colleciton Model Generated is:' + JSON.stringify(savedCollection))
     const sceneEntitiesArray: any = []
 
     for (const prop in sceneData.entities) {

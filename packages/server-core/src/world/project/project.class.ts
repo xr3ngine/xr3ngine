@@ -309,6 +309,7 @@ export class Project implements ServiceMethods<Data> {
     const projectIncludes: any = [
       {
         model: StaticResourceModel,
+        /////////////
         as: 'thumbnail_owned_file',
         attributes: ['url']
       }
@@ -333,7 +334,7 @@ export class Project implements ServiceMethods<Data> {
       where: {
         id: projectId
       },
-      attributes: ['name', 'id', 'sid', 'url', 'thumbnailOwnedFileId'],
+      attributes: ['name', 'id', 'sid', 'url', 'ownedUploadedFileId'],
       include: projectIncludes
     })
 
