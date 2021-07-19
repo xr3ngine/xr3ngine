@@ -12,7 +12,7 @@ import { GamepadAxis, XRAxes } from '../input/enums/InputEnums'
 import { getMutableComponent, hasComponent } from '../ecs/functions/EntityFunctions'
 import { CameraInput, GamepadButtons, MouseInput, TouchInputs } from '../input/enums/InputEnums'
 import { InputType } from '../input/enums/InputType'
-import { InputSchema } from '../input/interfaces/InputSchema'
+import { InputBehaviorType, InputSchema } from '../input/interfaces/InputSchema'
 import { InputAlias } from '../input/types/InputAlias'
 import { Interactable } from '../interaction/components/Interactable'
 import { Interactor } from '../interaction/components/Interactor'
@@ -28,6 +28,19 @@ import { XRUserSettings, XR_ROTATION_MODE } from '../xr/types/XRUserSettings'
 import { BinaryValue } from '../common/enums/BinaryValue'
 import { ParityValue } from '../common/enums/ParityValue'
 import { XRInputSourceComponent } from './components/XRInputSourceComponent'
+import { InputValue } from '../input/interfaces/InputValue'
+import { NumericalType } from '../common/types/NumericalTypes'
+
+const getParityFromInputValue = (key: InputAlias): ParityValue => {
+  switch (key) {
+    case BaseInput.GRAB_LEFT:
+      return ParityValue.LEFT
+    case BaseInput.GRAB_RIGHT:
+      return ParityValue.RIGHT
+    default:
+      return ParityValue.NONE
+  }
+}
 
 /**
  *
@@ -36,10 +49,14 @@ import { XRInputSourceComponent } from './components/XRInputSourceComponent'
  * @param delta
  */
 
-const interact: Behavior = (entity: Entity, args: any = { side: ParityValue }, delta): void => {
+const interact = (entity: Entity, inputKey: InputAlias, inputValue: InputValue<NumericalType>, delta: number): void => {
+  if (inputValue.lifecycleState !== LifecycleValue.STARTED) return
+
+  const parityValue = getParityFromInputValue(inputKey)
+
   if (!isClient) {
     //TODO: all this function needs to re-think
-    interactOnServer(entity, args) //TODO: figure out all this cases
+    interactOnServer(entity, parityValue) //TODO: figure out all this cases
     return
   }
 
@@ -81,7 +98,7 @@ const interact: Behavior = (entity: Entity, args: any = { side: ParityValue }, d
   // if (getInteractiveIsInReachDistance(entity, intPosition, args.side)) {
   if (interactive && typeof interactive.onInteraction === 'function') {
     if (!hasComponent(focusedEntity, VehicleComponent)) {
-      interactive.onInteraction(entity, args, delta, focusedEntity)
+      interactive.onInteraction(entity, { side: parityValue }, delta, focusedEntity)
     } else {
       console.log('Interaction with cars must work only from server')
     }
@@ -95,7 +112,13 @@ const interact: Behavior = (entity: Entity, args: any = { side: ParityValue }, d
  * Switch Camera mode from first person to third person and wise versa.
  * @param entity Entity holding {@link camera/components/FollowCameraComponent.FollowCameraComponent | Follow camera} component.
  */
-const cycleCameraMode: Behavior = (entity: Entity, args: any): void => {
+const cycleCameraMode = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  if (inputValue.lifecycleState !== LifecycleValue.STARTED) return
   const cameraFollow = getMutableComponent<FollowCameraComponent>(entity, FollowCameraComponent)
 
   switch (cameraFollow?.mode) {
@@ -120,14 +143,26 @@ const cycleCameraMode: Behavior = (entity: Entity, args: any): void => {
  * Fix camera behind the character to follow the character.
  * @param entity Entity on which camera will be fixed.
  */
-const fixedCameraBehindCharacter: Behavior = (entity: Entity, args: any, delta: number): void => {
+const fixedCameraBehindCharacter: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  if (inputValue.lifecycleState !== LifecycleValue.STARTED) return
   const follower = getMutableComponent<FollowCameraComponent>(entity, FollowCameraComponent)
   if (follower && follower.mode !== CameraModes.FirstPerson) {
     follower.locked = !follower.locked
   }
 }
 
-const switchShoulderSide: Behavior = (entity: Entity, args: any, detla: number): void => {
+const switchShoulderSide: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  if (inputValue.lifecycleState !== LifecycleValue.STARTED) return
   const cameraFollow = getMutableComponent<FollowCameraComponent>(entity, FollowCameraComponent)
   if (cameraFollow) {
     cameraFollow.shoulderSide = !cameraFollow.shoulderSide
@@ -156,7 +191,7 @@ const switchCameraMode = (entity: Entity, args: any = { pointerLock: false, mode
     changeTimeout = undefined
   }, 250)
 
-  const actor: CharacterComponent = getMutableComponent<CharacterComponent>(entity, CharacterComponent as any)
+  const actor = getMutableComponent(entity, CharacterComponent)
 
   const cameraFollow = getMutableComponent(entity, FollowCameraComponent)
   cameraFollow.mode = args.mode
@@ -196,61 +231,63 @@ let lastScrollDelta = 0
  * Change camera distance.
  * @param entity Entity holding camera and input component.
  */
-const changeCameraDistanceByDelta: Behavior = (
+const changeCameraDistanceByDelta: InputBehaviorType = (
   entity: Entity,
-  { input: inputAxes, inputType }: { input: InputAlias; inputType: InputType }
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
 ): void => {
   const inputComponent = getComponent(entity, Input) as Input
 
-  if (!inputComponent.data.has(inputAxes)) {
+  if (!inputComponent.data.has(inputKey)) {
     return
   }
 
   const cameraFollow = getMutableComponent<FollowCameraComponent>(entity, FollowCameraComponent)
   if (cameraFollow === undefined) return //console.warn("cameraFollow is undefined");
 
-  const inputPrevValue = (inputComponent.prevData.get(inputAxes)?.value as number) ?? 0
-  const inputValue = inputComponent.data.get(inputAxes).value as number
+  const inputPrevValue = (inputComponent.prevData.get(inputKey)?.value as number) ?? 0
+  const value = inputValue.value as number
 
-  const delta = Math.min(1, Math.max(-1, inputValue - inputPrevValue)) * (isMobile ? 0.25 : 1)
-  if (cameraFollow.mode !== CameraModes.ThirdPerson && delta === lastScrollDelta) {
+  const scrollDelta = Math.min(1, Math.max(-1, value - inputPrevValue)) * (isMobile ? 0.25 : 1)
+  if (cameraFollow.mode !== CameraModes.ThirdPerson && scrollDelta === lastScrollDelta) {
     return
   }
-  lastScrollDelta = delta
+  lastScrollDelta = scrollDelta
 
   switch (cameraFollow.mode) {
     case CameraModes.FirstPerson:
-      if (delta > 0) {
+      if (scrollDelta > 0) {
         switchCameraMode(entity, { mode: CameraModes.ShoulderCam })
       }
       break
     case CameraModes.ShoulderCam:
-      if (delta > 0) {
+      if (scrollDelta > 0) {
         switchCameraMode(entity, { mode: CameraModes.ThirdPerson })
         cameraFollow.distance = cameraFollow.minDistance + 1
       }
-      if (delta < 0) {
+      if (scrollDelta < 0) {
         switchCameraMode(entity, { mode: CameraModes.FirstPerson })
       }
       break
     default:
     case CameraModes.ThirdPerson:
-      const newDistance = cameraFollow.distance + delta
+      const newDistance = cameraFollow.distance + scrollDelta
       cameraFollow.distance = Math.max(cameraFollow.minDistance, Math.min(cameraFollow.maxDistance, newDistance))
 
       if (cameraFollow.distance >= cameraFollow.maxDistance) {
-        if (delta > 0) {
+        if (scrollDelta > 0) {
           switchCameraMode(entity, { mode: CameraModes.TopDown })
         }
       } else if (cameraFollow.distance <= cameraFollow.minDistance) {
-        if (delta < 0) {
+        if (scrollDelta < 0) {
           switchCameraMode(entity, { mode: CameraModes.ShoulderCam })
         }
       }
 
       break
     case CameraModes.TopDown:
-      if (delta < 0) {
+      if (scrollDelta < 0) {
         switchCameraMode(entity, { mode: CameraModes.ThirdPerson })
       }
       break
@@ -270,7 +307,12 @@ const morphNameByInput = {
   [CameraInput.Open]: 'Happy'
 }
 
-const setCharacterExpression: Behavior = (entity: Entity, args: any): void => {
+const setCharacterExpression: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
   // console.log('setCharacterExpression', args.input, morphNameByInput[args.input]);
   const object: Object3DComponent = getComponent<Object3DComponent>(entity, Object3DComponent)
   const body = object.value?.getObjectByName('Body') as Mesh
@@ -280,12 +322,12 @@ const setCharacterExpression: Behavior = (entity: Entity, args: any): void => {
   }
 
   const input: Input = getComponent(entity, Input)
-  const inputData = input?.data.get(args.input)
+  const inputData = input?.data.get(inputKey)
   if (!inputData) {
     return
   }
   const morphValue = inputData.value
-  const morphName = morphNameByInput[args.input]
+  const morphName = morphNameByInput[inputKey]
   const morphIndex = body.morphTargetDictionary[morphName]
   if (typeof morphIndex !== 'number') {
     return
@@ -309,15 +351,16 @@ const changedDirection = (radian: number) => {
   return radian < 3 * PI_BY_2 ? (radian = radian - PI_BY_2) : radian - 5 * PI_BY_2
 }
 
-const moveByInputAxis: Behavior = (
+const moveByInputAxis: InputBehaviorType = (
   entity: Entity,
-  args: { input: InputAlias; inputType: InputType },
-  time: any
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
 ): void => {
-  const actor = getMutableComponent<CharacterComponent>(entity, CharacterComponent as any)
+  const actor = getMutableComponent(entity, CharacterComponent)
   const input = getComponent<Input>(entity, Input as any)
 
-  const data = input.data.get(args.input)
+  const data = input.data.get(inputKey)
 
   if (data.type === InputType.TWODIM) {
     actor.localMovementDirection.z = data.value[0]
@@ -328,23 +371,52 @@ const moveByInputAxis: Behavior = (
     actor.localMovementDirection.x = data.value[0]
   }
 }
-const setWalking: Behavior = (entity, args: { value: number }): void => {
-  const actor: CharacterComponent = getMutableComponent<CharacterComponent>(entity, CharacterComponent as any)
-  actor.isWalking = args.value === BinaryValue.ON
+const setWalking: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  const actor = getMutableComponent(entity, CharacterComponent)
+  actor.isWalking = inputValue.lifecycleState !== LifecycleValue.ENDED
   actor.moveSpeed = actor.isWalking ? actor.walkSpeed : actor.runSpeed
 }
 
-const setLocalMovementDirection: Behavior = (entity, args: { z?: number; x?: number; y?: number }): void => {
-  const actor: CharacterComponent = getMutableComponent<CharacterComponent>(entity, CharacterComponent as any)
-
-  actor.localMovementDirection.z = args.z ?? actor.localMovementDirection.z
-  actor.localMovementDirection.x = args.x ?? actor.localMovementDirection.x
-  actor.localMovementDirection.y = args.y ?? actor.localMovementDirection.y
+const setLocalMovementDirection: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  const actor = getMutableComponent(entity, CharacterComponent)
+  const hasEnded = inputValue.lifecycleState === LifecycleValue.ENDED
+  switch (inputKey) {
+    case BaseInput.JUMP:
+      actor.localMovementDirection.y = hasEnded ? 0 : 1
+      break
+    case BaseInput.FORWARD:
+      actor.localMovementDirection.z = hasEnded ? 0 : 1
+      break
+    case BaseInput.BACKWARD:
+      actor.localMovementDirection.z = hasEnded ? 0 : -1
+      break
+    case BaseInput.LEFT:
+      actor.localMovementDirection.x = hasEnded ? 0 : 1
+      break
+    case BaseInput.RIGHT:
+      actor.localMovementDirection.x = hasEnded ? 0 : -1
+      break
+  }
   actor.localMovementDirection.normalize()
 }
 
-const moveFromXRInputs: Behavior = (entity, args): void => {
-  const actor: CharacterComponent = getMutableComponent<CharacterComponent>(entity, CharacterComponent as any)
+const moveFromXRInputs: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
+  const actor = getMutableComponent(entity, CharacterComponent)
   const input = getComponent<Input>(entity, Input as any)
   const values = input.data.get(BaseInput.XR_AXIS_MOVE)?.value
   if (!values) return
@@ -359,7 +431,12 @@ const deg2rad = Math.PI / 180
 const quat = new Quaternion()
 const upVec = new Vector3(0, 1, 0)
 
-const lookFromXRInputs: Behavior = (entity, args): void => {
+const lookFromXRInputs: InputBehaviorType = (
+  entity: Entity,
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
+): void => {
   const input = getComponent<Input>(entity, Input as any)
   const values = input.data.get(BaseInput.XR_AXIS_LOOK)?.value
   const rotationAngle = XRUserSettings.rotationAngle
@@ -389,19 +466,15 @@ const lookFromXRInputs: Behavior = (entity, args): void => {
   transform.rotation.multiply(quat)
 }
 
-const lookByInputAxis = (
+const lookByInputAxis: InputBehaviorType = (
   entity: Entity,
-  args: {
-    input: InputAlias // axis input to take values from
-    output: InputAlias // look input to set values to
-    inputType: InputType // type of value
-    multiplier: number //
-  },
-  time: any
+  inputKey: InputAlias,
+  inputValue: InputValue<NumericalType>,
+  delta: number
 ): void => {
   const input = getMutableComponent<Input>(entity, Input)
-  const data = input.data.get(args.input)
-  const multiplier = args.multiplier ?? 1
+  const data = input.data.get(BaseInput.GAMEPAD_STICK_RIGHT)
+  const multiplier = 0.1
   // adding very small noise to trigger same value to be "changed"
   // till axis values is not zero, look input should be treated as changed
   const noise = (Math.random() > 0.5 ? 1 : -1) * 0.00001
@@ -410,7 +483,7 @@ const lookByInputAxis = (
     const isEmpty = Math.abs(data.value[0]) === 0 && Math.abs(data.value[1]) === 0
     // axis is set, transfer it into output and trigger changed
     if (!isEmpty) {
-      input.data.set(args.output, {
+      input.data.set(BaseInput.LOOKTURN_PLAYERONE, {
         type: data.type,
         value: [data.value[0] * multiplier + noise, data.value[1] * multiplier + noise],
         lifecycleState: LifecycleValue.CHANGED
@@ -420,7 +493,7 @@ const lookByInputAxis = (
     // TODO: check if this mapping correct
     const isEmpty = Math.abs(data.value[0]) === 0 && Math.abs(data.value[2]) === 0
     if (!isEmpty) {
-      input.data.set(args.output, {
+      input.data.set(BaseInput.LOOKTURN_PLAYERONE, {
         type: data.type,
         value: [data.value[0] * multiplier + noise, data.value[2] * multiplier + noise],
         lifecycleState: LifecycleValue.CHANGED
@@ -497,389 +570,44 @@ export const createCharacterInput = () => {
 
   return map
 }
+export const createBehaviorMap = () => {
+  const map = new Map<InputAlias, InputBehaviorType>()
+
+  // BUTTON
+
+  map.set(BaseInput.SWITCH_CAMERA, cycleCameraMode)
+  map.set(BaseInput.LOCKING_CAMERA, fixedCameraBehindCharacter)
+  map.set(BaseInput.SWITCH_SHOULDER_SIDE, switchShoulderSide)
+
+  map.set(BaseInput.INTERACT, interact)
+  map.set(BaseInput.GRAB_LEFT, interact)
+  map.set(BaseInput.GRAB_RIGHT, interact)
+
+  map.set(BaseInput.JUMP, setLocalMovementDirection)
+  map.set(BaseInput.WALK, setWalking)
+  map.set(BaseInput.FORWARD, setLocalMovementDirection)
+  map.set(BaseInput.BACKWARD, setLocalMovementDirection)
+  map.set(BaseInput.LEFT, setLocalMovementDirection)
+  map.set(BaseInput.RIGHT, setLocalMovementDirection)
+
+  // AXIS
+
+  map.set(CameraInput.Happy, setCharacterExpression)
+  map.set(CameraInput.Sad, setCharacterExpression)
+
+  map.set(BaseInput.CAMERA_SCROLL, changeCameraDistanceByDelta)
+  map.set(BaseInput.MOVEMENT_PLAYERONE, moveByInputAxis)
+  map.set(BaseInput.GAMEPAD_STICK_LEFT, lookByInputAxis)
+  map.set(BaseInput.GAMEPAD_STICK_RIGHT, lookByInputAxis)
+  map.set(BaseInput.XR_AXIS_LOOK, lookFromXRInputs)
+  map.set(BaseInput.XR_AXIS_MOVE, moveFromXRInputs)
+
+  return map
+}
 
 export const CharacterInputSchema: InputSchema = {
-  onAdded: [],
-  onRemoved: [],
-  // Map mouse buttons to abstract input
+  onAdded: () => {},
+  onRemove: () => {},
   inputMap: createCharacterInput(),
-  // "Button behaviors" are called when button input is called (i.e. not axis input)
-  inputButtonBehaviors: {
-    [BaseInput.SWITCH_CAMERA]: {
-      started: [
-        {
-          behavior: cycleCameraMode,
-          args: {}
-        }
-      ]
-    },
-    [BaseInput.LOCKING_CAMERA]: {
-      started: [
-        {
-          behavior: fixedCameraBehindCharacter,
-          args: {}
-        }
-      ]
-    },
-    [BaseInput.SWITCH_SHOULDER_SIDE]: {
-      started: [
-        {
-          behavior: switchShoulderSide,
-          args: {}
-        }
-      ]
-    },
-    [BaseInput.INTERACT]: {
-      started: [
-        {
-          behavior: interact,
-          args: {
-            side: ParityValue.NONE
-          }
-        }
-      ]
-    },
-    [BaseInput.GRAB_LEFT]: {
-      started: [
-        {
-          behavior: interact,
-          args: {
-            side: ParityValue.LEFT
-          }
-        }
-      ]
-    },
-    [BaseInput.GRAB_RIGHT]: {
-      started: [
-        {
-          behavior: interact,
-          args: {
-            side: ParityValue.RIGHT
-          }
-        }
-      ]
-    },
-    [BaseInput.JUMP]: {
-      started: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            y: 1
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            y: 1
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            y: 0
-          }
-        }
-      ]
-    },
-    [BaseInput.WALK]: {
-      started: [
-        {
-          behavior: setWalking,
-          args: {
-            value: BinaryValue.ON
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setWalking,
-          args: {
-            value: BinaryValue.ON
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setWalking,
-          args: {
-            value: BinaryValue.OFF
-          }
-        }
-      ]
-    },
-    [BaseInput.FORWARD]: {
-      started: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: 1
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: 1
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: 0
-          }
-        }
-      ]
-    },
-    [BaseInput.BACKWARD]: {
-      started: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: -1
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: -1
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            z: 0
-          }
-        }
-      ]
-    },
-    [BaseInput.LEFT]: {
-      started: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: 1
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: 1
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: 0
-          }
-        }
-      ]
-    },
-    [BaseInput.RIGHT]: {
-      started: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: -1
-          }
-        }
-      ],
-      continued: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: -1
-          }
-        }
-      ],
-      ended: [
-        {
-          behavior: setLocalMovementDirection,
-          args: {
-            x: 0
-          }
-        }
-      ]
-    }
-  },
-  // Axis behaviors are called by continuous input and map to a scalar, vec2 or vec3
-  inputAxisBehaviors: {
-    [CameraInput.Happy]: {
-      started: [
-        {
-          behavior: setCharacterExpression,
-          args: {
-            input: CameraInput.Happy
-          }
-        }
-      ],
-      changed: [
-        {
-          behavior: setCharacterExpression,
-          args: {
-            input: CameraInput.Happy
-          }
-        }
-      ]
-    },
-    [CameraInput.Sad]: {
-      started: [
-        {
-          behavior: setCharacterExpression,
-          args: {
-            input: CameraInput.Sad
-          }
-        }
-      ],
-      changed: [
-        {
-          behavior: setCharacterExpression,
-          args: {
-            input: CameraInput.Sad
-          }
-        }
-      ]
-    },
-    [BaseInput.CAMERA_SCROLL]: {
-      started: [
-        {
-          behavior: changeCameraDistanceByDelta,
-          args: {
-            input: BaseInput.CAMERA_SCROLL,
-            inputType: InputType.ONEDIM
-          }
-        }
-      ],
-      changed: [
-        {
-          behavior: changeCameraDistanceByDelta,
-          args: {
-            input: BaseInput.CAMERA_SCROLL,
-            inputType: InputType.ONEDIM
-          }
-        }
-      ],
-      unchanged: [
-        {
-          behavior: changeCameraDistanceByDelta,
-          args: {
-            input: BaseInput.CAMERA_SCROLL,
-            inputType: InputType.ONEDIM
-          }
-        }
-      ]
-    },
-    [BaseInput.MOVEMENT_PLAYERONE]: {
-      started: [
-        {
-          behavior: moveByInputAxis,
-          args: {
-            input: BaseInput.MOVEMENT_PLAYERONE,
-            inputType: InputType.TWODIM
-          }
-        }
-      ],
-      changed: [
-        {
-          behavior: moveByInputAxis,
-          args: {
-            input: BaseInput.MOVEMENT_PLAYERONE,
-            inputType: InputType.TWODIM
-          }
-        }
-      ],
-      unchanged: [
-        {
-          behavior: moveByInputAxis,
-          args: {
-            input: BaseInput.MOVEMENT_PLAYERONE,
-            inputType: InputType.TWODIM
-          }
-        }
-      ]
-    },
-    [BaseInput.GAMEPAD_STICK_RIGHT]: {
-      started: [
-        {
-          behavior: lookByInputAxis,
-          args: {
-            input: BaseInput.GAMEPAD_STICK_RIGHT,
-            output: BaseInput.LOOKTURN_PLAYERONE,
-            multiplier: 0.1,
-            inputType: InputType.TWODIM
-          }
-        }
-      ],
-      changed: [
-        {
-          behavior: lookByInputAxis,
-          args: {
-            input: BaseInput.GAMEPAD_STICK_RIGHT,
-            output: BaseInput.LOOKTURN_PLAYERONE,
-            multiplier: 0.1,
-            inputType: InputType.TWODIM
-          }
-        }
-      ],
-      unchanged: [
-        {
-          behavior: lookByInputAxis,
-          args: {
-            input: BaseInput.GAMEPAD_STICK_RIGHT,
-            output: BaseInput.LOOKTURN_PLAYERONE,
-            multiplier: 0.1,
-            inputType: InputType.TWODIM
-          }
-        }
-      ]
-    },
-    [BaseInput.XR_AXIS_MOVE]: {
-      started: [
-        {
-          behavior: moveFromXRInputs
-        }
-      ],
-      changed: [
-        {
-          behavior: moveFromXRInputs
-        }
-      ],
-      unchanged: [
-        {
-          behavior: moveFromXRInputs
-        }
-      ]
-    },
-    [BaseInput.XR_AXIS_LOOK]: {
-      started: [
-        {
-          behavior: lookFromXRInputs
-        }
-      ],
-      changed: [
-        {
-          behavior: lookFromXRInputs
-        }
-      ],
-      unchanged: [
-        {
-          behavior: lookFromXRInputs
-        }
-      ]
-    }
-  }
+  behaviorMap: createBehaviorMap()
 }

@@ -22,7 +22,6 @@ import { XRInputSourceComponent } from '../../character/components/XRInputSource
 import { BaseInput } from '../../input/enums/BaseInput'
 import { Quaternion } from 'three'
 import { executeCommands } from '../functions/executeCommands'
-import { handleInput } from '../functions/handleInput'
 import { ClientActionToServer } from '../../game/templates/DefaultGameStateAction'
 
 export function cancelAllInputs(entity) {
@@ -31,13 +30,8 @@ export function cancelAllInputs(entity) {
   })
 }
 
-const q = new Quaternion()
-
 /** System class to handle incoming messages. */
 export class ServerNetworkIncomingSystem extends System {
-  /** Input component of the system. */
-  private _inputComponent: Input
-
   /** Update type of this system. **Default** to
    * {@link ecs/functions/SystemUpdateType.SystemUpdateType.Fixed | Fixed} type. */
   updateType = SystemUpdateType.Fixed
@@ -189,7 +183,12 @@ export class ServerNetworkIncomingSystem extends System {
         addComponent(entity, XRInputSourceComponent)
       }
 
-      handleInput(entity, delta)
+      // call input behaviors
+      input.data.forEach((value: InputValue<NumericalType>, key: InputAlias) => {
+        if (input.schema.behaviorMap.has(key)) {
+          input.schema.behaviorMap.get(key)(entity, key, value, delta)
+        }
+      })
     }
 
     // Apply input for local user input onto client
@@ -206,36 +205,16 @@ export class ServerNetworkIncomingSystem extends System {
           }
         }
       })
-
-      // Call behaviors associated with input
-      // addInputToWorldStateOnServer(entity);
-      // handleInput(entity, delta);
-      //const input = getMutableComponent(entity, Input);
-      // Get input object attached
     })
 
-    // Called when input component is added to entity
     this.queryResults.networkObjectsWithInput.added?.forEach((entity) => {
-      // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-
-      if (this._inputComponent === undefined)
-        return console.warn('Tried to execute on a newly added input component, but it was undefined')
-      // Call all behaviors in "onAdded" of input map
-      this._inputComponent.schema.onAdded?.forEach((behavior) => {
-        behavior.behavior(entity, { ...behavior.args })
-      })
+      const input = getComponent(entity, Input)
+      input.schema.onAdded(entity, delta)
     })
 
-    // Called when input component is removed from entity
     this.queryResults.networkObjectsWithInput.removed?.forEach((entity) => {
-      // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-
-      // Call all behaviors in "onRemoved" of input map
-      this._inputComponent?.schema?.onRemoved?.forEach((behavior) => {
-        behavior.behavior(entity, behavior.args)
-      })
+      const input = getComponent(entity, Input, true)
+      input.schema.onRemove(entity, delta)
     })
 
     this.queryResults.delegatedInputRouting.added?.forEach((entity) => {

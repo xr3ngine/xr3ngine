@@ -50,7 +50,7 @@ import { unequipEntity } from '../functions/equippableFunctions'
 
 const vector3 = new Vector3()
 // but is works on client too, i will config out this
-export const interactOnServer: Behavior = (entity: Entity, args: { side: ParityValue }, delta): void => {
+export const interactOnServer: Behavior = (entity: Entity, parityValue, delta): void => {
   //console.warn('Behavior: interact , networkId ='+getComponent(entity, NetworkObject).networkId);
 
   const equipperComponent = getComponent(entity, EquipperComponent)
@@ -71,12 +71,12 @@ export const interactOnServer: Behavior = (entity: Entity, args: { side: ParityV
       if (interactive.interactionPartsPosition.length > 0) {
         interactive.interactionPartsPosition.forEach((v, i) => {
           const partPosition = vector3.set(v[0], v[1], v[2]).applyQuaternion(intRotation).add(intPosition)
-          if (getInteractiveIsInReachDistance(entity, intPosition, args.side)) {
+          if (getInteractiveIsInReachDistance(entity, intPosition, parityValue)) {
             focusedArrays.push([isEntityInteractable, position.distanceTo(partPosition), i])
           }
         })
       } else {
-        if (getInteractiveIsInReachDistance(entity, intPosition, args.side)) {
+        if (getInteractiveIsInReachDistance(entity, intPosition, parityValue)) {
           if (typeof interactive.onInteractionCheck === 'function') {
             if (interactive.onInteractionCheck(entity, isEntityInteractable, null)) {
               focusedArrays.push([isEntityInteractable, position.distanceTo(intPosition), null])
@@ -97,7 +97,7 @@ export const interactOnServer: Behavior = (entity: Entity, args: { side: ParityV
 
   if (interactable.data.interactionType === 'gameobject') {
     addActionComponent(focusedArrays[0][0], HasHadInteraction, {
-      args,
+      args: { side: parityValue },
       entityNetworkId: getComponent(entity, NetworkObject).networkId
     })
     return
@@ -105,7 +105,12 @@ export const interactOnServer: Behavior = (entity: Entity, args: { side: ParityV
   // Not Game Object
   if (interactionCheck) {
     //  console.warn('start with networkId: '+getComponent(focusedArrays[0][0], NetworkObject).networkId+' seat: '+focusedArrays[0][2]);
-    interactable.onInteraction(entity, { ...args, currentFocusedPart: focusedArrays[0][2] }, delta, focusedArrays[0][0])
+    interactable.onInteraction(
+      entity,
+      { side: parityValue, currentFocusedPart: focusedArrays[0][2] },
+      delta,
+      focusedArrays[0][0]
+    )
   }
 }
 

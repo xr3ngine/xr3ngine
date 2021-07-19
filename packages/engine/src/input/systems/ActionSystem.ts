@@ -1,10 +1,8 @@
-import { BinaryValue } from '../../common/enums/BinaryValue'
 import { LifecycleValue } from '../../common/enums/LifecycleValue'
-import { isClient } from '../../common/functions/isClient'
-import { NumericalType, SIXDOFType } from '../../common/types/NumericalTypes'
+import { NumericalType } from '../../common/types/NumericalTypes'
 import { System, SystemAttributes } from '../../ecs/classes/System'
 import { Not } from '../../ecs/functions/ComponentFunctions'
-import { getComponent, hasComponent, getMutableComponent } from '../../ecs/functions/EntityFunctions'
+import { getComponent, getMutableComponent } from '../../ecs/functions/EntityFunctions'
 import { SystemUpdateType } from '../../ecs/functions/SystemUpdateType'
 import { Network } from '../../networking/classes/Network'
 import { NetworkObject } from '../../networking/components/NetworkObject'
@@ -20,17 +18,8 @@ import { EngineEvents } from '../../ecs/classes/EngineEvents'
 import { ClientInputSystem } from './ClientInputSystem'
 import { WEBCAM_INPUT_EVENTS } from '../constants/InputConstants'
 import { Quaternion, Vector3 } from 'three'
-import { Entity } from '../../ecs/classes/Entity'
-import { TransformComponent } from '../../transform/components/TransformComponent'
-import { Engine } from '../../ecs/classes/Engine'
-import { handleInput } from '../../networking/functions/handleInput'
 
 const isBrowser = new Function('try {return this===window;}catch(e){ return false;}')
-
-const quat = new Quaternion()
-const quat1 = new Quaternion()
-const vec = new Vector3()
-const vec1 = new Vector3()
 
 let faceToInput, lipToInput
 
@@ -50,22 +39,10 @@ if (isBrowser())
 
 export class ActionSystem extends System {
   updateType = SystemUpdateType.Fixed
-  needSend = false
-  switchId = 1
-  // Temp/ref variables
-  private _inputComponent: Input
-  // Client only variables
-  public leftControllerId //= 0
-  public rightControllerId //= 1
   receivedClientInputs = []
 
   constructor(attributes: SystemAttributes = {}) {
     super(attributes)
-    // Client only
-    if (isClient) {
-      this.leftControllerId = 0
-      this.rightControllerId = 1
-    }
 
     EngineEvents.instance.addEventListener(WEBCAM_INPUT_EVENTS.FACE_INPUT, ({ detection }) => {
       faceToInput(Network.instance.localClientEntity, detection)
@@ -138,13 +115,12 @@ export class ActionSystem extends System {
     })
 
     this.queryResults.localClientInput.all?.forEach((entity) => {
+      const input = getMutableComponent(entity, Input)
+
       // Apply input for local user input onto client
       const receivedClientInput = [...this.receivedClientInputs]
       this.receivedClientInputs = []
       receivedClientInput?.forEach((stateUpdate) => {
-        // Get immutable reference to Input and check if the button is defined -- ignore undefined buttons
-        const input = getMutableComponent(entity, Input)
-
         // key is the input type enu, value is the input value
         stateUpdate.forEach((value: InputValue<NumericalType>, key: InputAlias) => {
           if (input.schema.inputMap.has(key)) {
@@ -181,17 +157,20 @@ export class ActionSystem extends System {
               : LifecycleValue.CHANGED
         })
 
-        handleInput(entity, delta)
+        // call input behaviors
+        input.data.forEach((value: InputValue<NumericalType>, key: InputAlias) => {
+          if (input.schema.behaviorMap.has(key)) {
+            input.schema.behaviorMap.get(key)(entity, key, value, delta)
+          }
+        })
+
+        // handleInput(entity, delta)
 
         // store prevData
         input.prevData.clear()
         input.data.forEach((value: InputValue<NumericalType>, key: InputAlias) => {
           input.prevData.set(key, value)
         })
-
-        // Repopulate lastData
-        input.lastData.clear()
-        input.data.forEach((value, key) => input.lastData.set(key, value))
 
         // Add all values in input component to schema
         input.data.forEach((value: any, key) => {
@@ -242,62 +221,15 @@ export class ActionSystem extends System {
     // Called when input component is added to entity
     this.queryResults.localClientInput.added?.forEach((entity) => {
       // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-      if (this._inputComponent === undefined)
-        return console.warn('Tried to execute on a newly added input component, but it was undefined')
-      // Call all behaviors in "onAdded" of input map
-      this._inputComponent.schema.onAdded.forEach((behavior) => {
-        behavior.behavior(entity, { ...behavior.args })
-      })
+      const input = getComponent(entity, Input)
+      input.schema.onAdded(entity, delta)
     })
 
     // Called when input component is removed from entity
     this.queryResults.localClientInput.removed.forEach((entity) => {
       // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-      if (this._inputComponent === undefined)
-        return console.warn('Tried to execute on a newly added input component, but it was undefined')
-      if (this._inputComponent.data.size) {
-        this._inputComponent.data.forEach((value: InputValue<NumericalType>, key: InputAlias) => {
-          // For each input currently on the input object:
-          // If the input is a button
-          if (value.type === InputType.BUTTON) {
-            // If the input exists on the input map (otherwise ignore it)
-            if (this._inputComponent.schema.inputButtonBehaviors[key]) {
-              if (value.lifecycleState !== LifecycleValue.ENDED) {
-                this._inputComponent.schema.inputButtonBehaviors[key].ended?.forEach((element) =>
-                  element.behavior(entity, element.args, delta)
-                )
-              }
-              this._inputComponent.data.delete(key)
-            }
-          }
-        })
-      }
-    })
-
-    // Called when input component is added to entity
-    this.queryResults.networkClientInput.added?.forEach((entity) => {
-      // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-
-      if (this._inputComponent === undefined)
-        return console.warn('Tried to execute on a newly added input component, but it was undefined')
-      // Call all behaviors in "onAdded" of input map
-      this._inputComponent.schema.onAdded?.forEach((behavior) => {
-        behavior.behavior(entity, { ...behavior.args })
-      })
-    })
-
-    // Called when input component is removed from entity
-    this.queryResults.networkClientInput.removed?.forEach((entity) => {
-      // Get component reference
-      this._inputComponent = getComponent(entity, Input)
-
-      // Call all behaviors in "onRemoved" of input map
-      this._inputComponent?.schema?.onRemoved?.forEach((behavior) => {
-        behavior.behavior(entity, behavior.args)
-      })
+      const input = getComponent(entity, Input, true)
+      input.schema.onRemove(entity, delta)
     })
   }
 }
